@@ -61,17 +61,28 @@ class ArticleCandidateList(BaseModel):
 class TermItem(BaseModel):
     """단어 항목 (전문 용어 / 기본 핵심 단어 공용)."""
 
-    term: str = Field(description="단어 또는 표현")
-    meaning: str = Field(description="한글 뜻")
-    example: str = Field(description="해당 단어가 쓰인 예문")
+    term: str = Field(
+        description="기사 본문에 실제로 등장한 **영어** 단어 또는 표현. "
+        "한국어로 쓰지 말 것. 예: 'threat intelligence', 'surveil'"
+    )
+    meaning: str = Field(description="그 영어 단어의 한국어 뜻풀이. 예: '위협 정보'")
+    example: str = Field(
+        description="기사 본문에서 그 단어가 쓰인 **영어 문장을 그대로 발췌**. "
+        "새로 지어내지 말고 원문에 있는 문장을 사용할 것."
+    )
 
 
 class GrammarItem(BaseModel):
     """문법 포인트 항목."""
 
-    pattern: str = Field(description="문법 패턴 (예: 'have been + p.p.')")
-    explanation: str = Field(description="문법 설명")
-    example: str = Field(description="기사에서 발췌하거나 만든 예문")
+    pattern: str = Field(
+        description="**영어** 문법 패턴을 영어 표기로. 한국어 문법(조사·어미)을 쓰지 말 것. "
+        "예: 'have been + p.p. (현재완료 수동태)', 'according to + 명사'"
+    )
+    explanation: str = Field(description="그 영어 문법에 대한 한국어 설명")
+    example: str = Field(
+        description="기사 본문에서 그 문법이 실제로 쓰인 **영어 문장을 그대로 발췌**"
+    )
 
 
 class ArticleStudyMaterial(BaseModel):
@@ -79,13 +90,19 @@ class ArticleStudyMaterial(BaseModel):
 
     translated_text: str = Field(description="기사 전문의 자연스러운 한글 번역본")
     key_terms: list[TermItem] = Field(
-        description="기사에 등장하는 전문 용어 3~7개", min_length=3, max_length=7
+        description="기사 주제 분야의 **전문 용어 영어 단어** 3~7개. "
+        "그 분야를 모르면 사전을 찾아도 뜻이 잘 안 잡히는 단어를 고른다. "
+        "기사가 길면 3개에서 멈추지 말고 5~7개를 채울 것.",
+        min_length=3, max_length=7,
     )
     basic_vocab: list[TermItem] = Field(
-        description="학습자 눈높이의 기본 핵심 단어 3~7개", min_length=3, max_length=7
+        description="전문 용어가 아닌 **일반 영어 빈출 단어** 3~7개. "
+        "학습자 난이도에 맞춰 고르고, key_terms 와 **겹치지 않게** 한다. "
+        "기사가 길면 5~7개를 채울 것.",
+        min_length=3, max_length=7,
     )
     grammar_points: list[GrammarItem] = Field(
-        description="주요 문법 포인트 1~3개", min_length=1, max_length=3
+        description="기사 문장에서 뽑은 **영어 문법** 포인트 1~3개", min_length=1, max_length=3
     )
 
 
@@ -95,10 +112,19 @@ class ArticleStudyMaterial(BaseModel):
 class QuizQuestion(BaseModel):
     """4지선다 퀴즈 1문항."""
 
-    question: str = Field(description="문제 (한글로 출제, 필요 시 영어 지문 인용)")
-    choices: list[str] = Field(description="선택지 4개", min_length=4, max_length=4)
-    answer: str = Field(description="정답 — choices 중 하나와 정확히 일치해야 함")
-    explanation: str = Field(description="정답 해설")
+    question: str = Field(
+        description="문제. 지시문은 한국어로 쓰되 **영어 표현·문장은 원문 그대로 인용**한다. "
+        "기사 내용 상식이 아니라 **영어 실력**을 묻는 문항으로 만들 것."
+    )
+    choices: list[str] = Field(
+        description="선택지 4개. 오답 3개도 **같은 품사·비슷한 길이·그럴듯한 뜻**으로 만들어 "
+        "정답이 한눈에 티나지 않게 한다. 'none of the above' 같은 회피 선택지 금지.",
+        min_length=4, max_length=4,
+    )
+    answer: str = Field(description="정답 — choices 중 하나와 문자열이 정확히 일치해야 함")
+    explanation: str = Field(
+        description="왜 그 답인지, 그리고 **오답이 왜 틀렸는지**까지 한국어로 설명"
+    )
 
 
 class QuizSet(BaseModel):
