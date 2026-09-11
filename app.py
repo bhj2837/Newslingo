@@ -97,22 +97,29 @@ h1, h2, h3, .head { font-family:'Space Grotesk','Noto Sans KR',sans-serif !impor
 
 /* 추천 기사 카드 (신문 지면 스타일) */
 .news-card{
-  display:flex; flex-direction:column; gap:10px;
+  display:flex; flex-direction:column; gap:10px; height:100%;
   padding-top:10px; border-top:2px solid var(--ink);
-  transition: border-color .15s ease;
+  transition: border-color .15s ease, opacity .15s ease;
 }
 .news-card .kicker{
   display:flex; align-items:center; justify-content:space-between;
   font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3);
 }
 .news-card .kicker .idx{ font-variant-numeric:tabular-nums; color:var(--ink-3); }
+.news-card .kicker .read-badge{
+  font-weight:700; letter-spacing:.06em; color:var(--ink-3); background:var(--bg);
+  border:1px solid var(--line); border-radius:999px; padding:1px 7px;
+}
 .news-card .headline{
   font-family:'Source Serif 4', Georgia, 'Noto Serif KR', serif;
   font-size:16.5px; font-weight:600; line-height:1.32; color:var(--ink);
   text-wrap:balance; min-height:62px;
 }
+.news-card .summary{
+  font-size:12.5px; line-height:1.55; color:var(--ink-2);
+}
 .news-card .byline{
-  display:flex; align-items:center; gap:6px;
+  display:flex; align-items:center; gap:6px; margin-top:auto;
   font-size:11px; color:var(--ink-3); font-variant-numeric:tabular-nums;
   padding-top:8px; border-top:1px solid var(--line);
 }
@@ -121,6 +128,11 @@ h1, h2, h3, .head { font-family:'Space Grotesk','Noto Sans KR',sans-serif !impor
 .news-card.selected{ border-top-color:var(--accent); }
 .news-card.selected .kicker{ color:var(--accent); }
 .news-card.selected .headline{ color:var(--ink); }
+.news-card.read:not(.selected){ opacity:.5; }
+div[data-testid="stHorizontalBlock"]:has(.news-card){ align-items:stretch; }
+div[data-testid="stHorizontalBlock"]:has(.news-card) > div{ display:flex; }
+div[data-testid="stHorizontalBlock"]:has(.news-card) > div > div{ display:flex; flex-direction:column; width:100%; }
+div[data-testid="stElementContainer"]:has(.news-card){ flex:1; display:flex; }
 
 .label{ font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); }
 
@@ -231,6 +243,8 @@ def get_session():
         st.session_state.level_interrupt = None
         st.session_state.onboarded = False
         st.session_state.default_candidates_loaded = False
+        st.session_state.read_urls = set()
+        st.session_state.pending_action = None
     return st.session_state.session
 
 
@@ -341,6 +355,32 @@ def _run_search(topic: str) -> None:
     st.session_state.study_material = None
 
 
+def _select_article(art) -> None:
+    session.select_article(art)
+    with st.spinner("학습자료를 만드는 중..."):
+        st.session_state.study_material = session.make_study_material()
+    st.session_state.read_urls.add(art.url)
+
+
+def _apply_pending_action() -> None:
+    action = st.session_state.pending_action
+    st.session_state.pending_action = None
+    st.session_state.show_quiz = False
+    st.session_state.quiz = None
+    st.session_state.quiz_answers = {}
+    st.session_state.quiz_result = None
+    st.session_state.level_recommendation = None
+    st.session_state.level_interrupt = None
+    if action is None:
+        return
+    if action["type"] == "article":
+        art = next((a for a in st.session_state.candidates if a.url == action["url"]), None)
+        if art is not None:
+            _select_article(art)
+    elif action["type"] == "search":
+        _run_search(action["topic"])
+
+
 def render_topic_and_candidates() -> None:
     if not st.session_state.candidates and not st.session_state.get("default_candidates_loaded"):
         st.session_state.default_candidates_loaded = True
@@ -357,7 +397,12 @@ def render_topic_and_candidates() -> None:
         search_clicked = st.button("기사 찾기", use_container_width=True, type="primary")
 
     if search_clicked and topic_input.strip():
-        _run_search(topic_input.strip())
+        if session.current_article is not None:
+            # 기사를 읽던 중 다른 주제를 검색하면, 퀴즈를 먼저 풀어야 넘어갈 수 있다.
+            st.session_state.pending_action = {"type": "search", "topic": topic_input.strip()}
+            st.session_state.show_quiz = True
+        else:
+            _run_search(topic_input.strip())
         st.rerun()
 
     if st.session_state.candidates:
@@ -367,21 +412,38 @@ def render_topic_and_candidates() -> None:
         for i, (col, art) in enumerate(zip(cols, st.session_state.candidates), start=1):
             with col:
                 is_selected = art.url == selected_url
+                is_read = art.url in st.session_state.read_urls
                 category = (art.keywords[0] if art.keywords else art.source).title()
+                idx_html = '<span class="read-badge">읽음</span>' if is_read and not is_selected else f'<span class="idx">{i:02d}</span>'
+                card_classes = "news-card"
+                if is_selected:
+                    card_classes += " selected"
+                if is_read:
+                    card_classes += " read"
                 st.markdown(
                     f"""
-                    <div class="news-card{' selected' if is_selected else ''}">
-                      <div class="kicker"><span>{category}</span><span class="idx">{i:02d}</span></div>
+                    <div class="{card_classes}">
+                      <div class="kicker"><span>{category}</span>{idx_html}</div>
                       <div class="headline">{art.title}</div>
+                      <div class="summary">{art.summary}</div>
                       <div class="byline"><b>{art.source}</b><span class="sep">·</span><span>{art.published_date}</span></div>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
-                if st.button("읽기" if not is_selected else "읽는 중", key=f"pick-{art.url}", use_container_width=True, disabled=is_selected):
-                    session.select_article(art)
-                    with st.spinner("학습자료를 만드는 중..."):
-                        st.session_state.study_material = session.make_study_material()
+                if is_selected:
+                    btn_label = "읽는 중"
+                elif is_read:
+                    btn_label = "다시 읽기"
+                else:
+                    btn_label = "읽기"
+                if st.button(btn_label, key=f"pick-{art.url}", use_container_width=True, disabled=is_selected):
+                    if session.current_article is not None:
+                        # 다른 기사를 읽던 중이면, 퀴즈를 먼저 풀어야 넘어갈 수 있다.
+                        st.session_state.pending_action = {"type": "article", "url": art.url}
+                        st.session_state.show_quiz = True
+                    else:
+                        _select_article(art)
                     st.rerun()
 
 
@@ -482,8 +544,11 @@ def render_vocab_grammar(material) -> None:
 # 8~14단계: 퀴즈 화면 (별도 화면)
 # ──────────────────────────────────────────────────────────────
 def render_quiz_screen() -> None:
+    forced = st.session_state.pending_action is not None
     st.markdown('<p class="head" style="font-size:24px;font-weight:700;">📝 퀴즈</p>', unsafe_allow_html=True)
-    if st.button("← 학습으로 돌아가기"):
+    if forced:
+        st.caption("🔒 다른 기사로 넘어가려면 먼저 퀴즈를 완료해주세요.")
+    elif st.button("← 학습으로 돌아가기"):
         st.session_state.show_quiz = False
         st.rerun()
 
@@ -524,6 +589,8 @@ def render_quiz_screen() -> None:
     st.markdown("---")
     st.markdown(f"**추천**: {recommendation.message}")
 
+    continue_label = "다음 기사로 계속하기 →" if forced else "← 학습으로 돌아가기"
+
     interrupt = st.session_state.level_interrupt
     if interrupt is not None:
         st.info(f"🔔 확인 필요: {interrupt}")
@@ -543,8 +610,12 @@ def render_quiz_screen() -> None:
             out = session.propose_level_change(recommendation)
             st.session_state.level_interrupt = out["interrupt"]
             st.rerun()
-        if c2.button("현재 난이도 유지"):
-            st.session_state.show_quiz = False
+        if c2.button(f"현재 난이도 유지 · {continue_label}"):
+            _apply_pending_action()
+            st.rerun()
+    else:
+        if st.button(continue_label, type="primary"):
+            _apply_pending_action()
             st.rerun()
 
 
