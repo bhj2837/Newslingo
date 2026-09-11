@@ -36,7 +36,7 @@ jupyter notebook newslingo/notebooks/newslingo_demo.ipynb
 |---|---|---|
 | `config.py` | 환경변수·모델명·임계치 상수 | 1.5, 2.3 |
 | `schemas.py` | Structured Output (Pydantic) | **2.4** |
-| `prompts.py` | System Prompt / Few-shot / 체인 템플릿 | 2.3 |
+| `prompts/` | System Prompt / Few-shot / 체인 템플릿 (담당자별 파일 분리) | 2.3 |
 | `models.py` | 모델1(메인) / 모델2(분류) 생성 | **2.3** |
 | `memory.py` | 단기(checkpointer) / 장기(Store) 메모리 | **3.1** |
 | `tools.py` | `news_search`, `update_preference` | **2.5** |
