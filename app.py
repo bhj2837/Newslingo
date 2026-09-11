@@ -741,7 +741,7 @@ def render_quiz_screen() -> None:
     elif recommendation.is_change():
         c1, c2 = st.columns(2)
         if c1.button(f"{recommendation.suggested_level}(으)로 변경", type="primary"):
-            out = session.propose_level_change(recommendation)
+            out = session.request_level_change(recommendation.suggested_level)
             st.session_state.level_interrupt = out["interrupt"]
             st.rerun()
         if c2.button(f"현재 난이도 유지 · {continue_label}"):
