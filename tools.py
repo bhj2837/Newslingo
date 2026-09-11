@@ -180,14 +180,25 @@ def _to_ymd(raw: str) -> str:
         return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
-def _clean_text(raw: str) -> str:
+def _clean_text(raw: str, keep_paragraphs: bool = False) -> str:
     """HTML 태그/엔티티 제거 + 공백 정리.
 
-    Guardian 의 bodyText 는 보통 이미 순수 텍스트지만, trailText 등에는 <strong> 같은
-    가벼운 마크업이 섞여 있을 수 있어 방어적으로 한 번 더 벗겨낸다.
+    Guardian 의 body 필드는 <p>단락</p><p>단락</p> 형태의 HTML 이다 (bodyText 필드는
+    태그/단락 구분이 전부 제거된 순수 텍스트라 여기 쓰면 안 됨 — 실키로 확인함).
+    keep_paragraphs=True 면 </p>, <br> 등 블록 경계를 빈 줄(\\n\\n)로 바꿔 단락
+    구분을 살린 뒤 태그를 벗긴다 (프론트에서 단락별로 렌더링할 수 있게).
+    keep_paragraphs=False(기본, 제목/요약용)면 기존처럼 모든 공백을 한 칸으로 뭉갠다.
     """
     if not raw:
         return ""
+    if keep_paragraphs:
+        text = re.sub(r"<\s*(p|br|div)\b[^>]*>", "\n\n", raw, flags=re.IGNORECASE)
+        text = re.sub(r"<[^>]+>", "", text)
+        text = html.unescape(text)
+        # 단락 내부 공백은 한 칸으로, 단락 사이 빈 줄은 정확히 \n\n 하나로 정리.
+        lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
+        paragraphs = [line for line in lines if line]
+        return "\n\n".join(paragraphs)
     text = re.sub(r"<[^>]+>", " ", raw)
     text = html.unescape(text)
     return re.sub(r"\s+", " ", text).strip()
@@ -217,7 +228,9 @@ def _normalize(article: dict) -> dict:
     설계서 2.5 news_search 반환 형태: 제목/URL/요약/출처 + 학습자료 생성용 본문(content).
     """
     fields = article.get("fields") or {}
-    body_text = _clean_text(fields.get("bodyText") or "")
+    body_text = _clean_text(
+        fields.get("body") or fields.get("bodyText") or "", keep_paragraphs=True
+    )
     trail_text = _clean_text(fields.get("trailText") or "")
     section = article.get("sectionName")
     content = body_text or trail_text
@@ -237,7 +250,8 @@ def _normalize(article: dict) -> dict:
 def _fetch_from_guardian(query: str) -> list[dict]:
     """Guardian Content API /search 호출 (실패 시 예외를 그대로 던짐).
 
-    show-fields=trailText,bodyText 로 요약(trailText)과 본문 전체(bodyText)를 함께 받는다.
+    show-fields=trailText,body 로 요약(trailText)과 본문 전체(body, 단락 태그 포함 HTML)를
+    함께 받는다. bodyText 는 단락 구분이 사라진 순수 텍스트라 쓰지 않는다.
     order-by=relevance 로 정렬 (실키 테스트 결과: newest 는 검색어와 무관한 최신 기사가
     섞여 나옴 — 예) "climate change" 검색 시 축구 프리뷰가 1위. relevance 로 바꾸면
     15개 전부 실제로 주제와 관련된 기사로 나옴. 학습 주제 매칭이 최신성보다 중요하다고
@@ -253,7 +267,7 @@ def _fetch_from_guardian(query: str) -> list[dict]:
             "api-key": _GUARDIAN_API_KEY,
             "order-by": "relevance",
             "page-size": config.NEWS_RAW_PAGE_SIZE,
-            "show-fields": "trailText,bodyText",
+            "show-fields": "trailText,body",
             "type": "article",
         },
         timeout=config.NEWS_SEARCH_TIMEOUT,

@@ -88,8 +88,14 @@ class GrammarItem(BaseModel):
 class ArticleStudyMaterial(BaseModel):
     """선택한 기사에 대한 학습자료 묶음 (설계서 2.2 6단계)."""
 
-    original_text: str = Field(description="기사 전문 영어 원문 (요약하지 않고 입력받은 본문 그대로)")
-    translated_text: str = Field(description="기사 전문의 자연스러운 한글 번역본")
+    original_text: str = Field(
+        description="기사 전문 영어 원문 (요약하지 않고 입력받은 본문 그대로). "
+        "단락 구분은 빈 줄(\\n\\n)로 표시하고, 한 단락 안에서는 줄바꿈을 넣지 않는다."
+    )
+    translated_text: str = Field(
+        description="기사 전문의 자연스러운 한글 번역본. "
+        "original_text 와 동일한 단락 구조를 유지하며 단락 사이는 빈 줄(\\n\\n)로 구분한다."
+    )
     key_terms: list[TermItem] = Field(
         description="기사 주제 분야의 **전문 용어 영어 단어** 3~7개. "
         "그 분야를 모르면 사전을 찾아도 뜻이 잘 안 잡히는 단어를 고른다. "
