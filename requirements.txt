@@ -1,0 +1,12 @@
+# === Newslingo 실행에 필요한 패키지 ===
+# 강의에서 사용한 LangChain 1.x 계열 API (create_agent, middleware, Structured Output)
+
+langchain>=1.0
+langchain-openai>=1.0
+langgraph>=1.0
+python-dotenv>=1.0
+pydantic>=2.0
+requests>=2.30
+
+# UI (나중에 추가 예정) - 아직 미사용, 붙일 때 주석 해제
+# streamlit>=1.36
