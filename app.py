@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 from dotenv import load_dotenv
 
 # .env 는 원래 newslingo.config 가 import 시점에 읽어들이는데, 그건 이 파일
@@ -153,13 +154,24 @@ div[data-testid="stElementContainer"]:has(.news-card){ flex:1; display:flex; }
   font-size:13px; line-height:1.5; margin:6px 0; max-width:88%; }
 
 /* 단어/문법 */
-.vocab-row{ display:flex; justify-content:space-between; align-items:center; padding:9px 12px;
+.vocab-row{ display:flex; flex-direction:column; gap:4px; padding:9px 12px;
   background:var(--bg); border-radius:10px; margin-bottom:6px; font-size:13px; }
+.vocab-row-main{ display:flex; justify-content:space-between; align-items:center; }
 .vocab-row b{ color:var(--ink); }
-.vocab-row span{ color:var(--ink-3); font-size:12px; }
-.grammar-box{ padding:11px 12px; background:var(--accent-soft); border-radius:10px; }
+.vocab-row-main span{ color:var(--ink-3); font-size:12px; }
+.vocab-example{ color:var(--ink-3); font-size:11.5px; font-style:italic; line-height:1.4; }
+.grammar-box{ padding:11px 12px; background:var(--accent-soft); border-radius:10px; margin-bottom:6px; }
 .grammar-box b{ color:var(--accent); font-size:13px; }
 .grammar-box p{ color:var(--ink-2); font-size:12px; line-height:1.5; margin:4px 0 0; }
+.grammar-box .grammar-example{ color:var(--ink-3); font-size:11.5px; font-style:italic; margin:6px 0 0; }
+
+/* 채팅 타이핑 인디케이터 */
+.bubble-typing{ display:inline-flex; gap:4px; padding:11px 14px; }
+.bubble-typing span{ width:6px; height:6px; border-radius:50%; background:var(--ink-3);
+  animation: typing-bounce 1s infinite ease-in-out; }
+.bubble-typing span:nth-child(2){ animation-delay:.15s; }
+.bubble-typing span:nth-child(3){ animation-delay:.3s; }
+@keyframes typing-bounce{ 0%, 60%, 100%{ transform:translateY(0); opacity:.4; } 30%{ transform:translateY(-4px); opacity:1; } }
 
 /* 버튼 공통 */
 .stButton>button{
@@ -245,6 +257,7 @@ def get_session():
         st.session_state.default_candidates_loaded = False
         st.session_state.read_urls = set()
         st.session_state.pending_action = None
+        st.session_state.pending_chat_message = None
     return st.session_state.session
 
 
@@ -487,21 +500,61 @@ def render_learning_area() -> None:
         )
 
     with right:
-        render_chat()
         render_vocab_grammar(material)
+        render_chat()
 
 
 def render_chat() -> None:
     with st.container(border=True, key="chat_box"):
         st.markdown('<div class="label" style="margin-bottom:8px;">질문하며 학습하기</div>', unsafe_allow_html=True)
 
-        history_box = st.container(height=220)
+        pending_msg = st.session_state.get("pending_chat_message")
+
+        history_box = st.container(height=440, key="chat_history")
         with history_box:
             for line in session.chat_log:
                 if line.startswith("User: "):
                     st.markdown(f'<div class="bubble-user">{line[6:]}</div>', unsafe_allow_html=True)
                 elif line.startswith("Tutor: "):
                     st.markdown(f'<div class="bubble-tutor">{line[7:]}</div>', unsafe_allow_html=True)
+            if pending_msg is not None:
+                st.markdown(f'<div class="bubble-user">{pending_msg}</div>', unsafe_allow_html=True)
+                st.markdown(
+                    '<div class="bubble-tutor bubble-typing"><span></span><span></span><span></span></div>',
+                    unsafe_allow_html=True,
+                )
+
+        components.html(
+            """
+            <script>
+            (function(){
+              const doc = window.parent.document;
+              const root = doc.querySelector('.st-key-chat_history');
+              if (!root) return;
+              function findScrollable(el){
+                if (el.scrollHeight > el.clientHeight) return el;
+                for (const child of el.children){
+                  const found = findScrollable(child);
+                  if (found) return found;
+                }
+                return null;
+              }
+              const target = findScrollable(root) || root;
+              target.scrollTop = target.scrollHeight;
+            })();
+            </script>
+            """,
+            height=0,
+        )
+
+        if pending_msg is not None:
+            # 이전 rerun에서 사용자 말풍선 + 타이핑 표시까지 먼저 그려둔 뒤,
+            # 이번 run에서 실제로 응답을 생성한다 (지연 시간 동안 UI가 비어있지 않도록).
+            out = session.chat(pending_msg)
+            st.session_state.pending_chat_message = None
+            st.session_state.pending_interrupt = out["interrupt"]
+            st.rerun()
+            return
 
         interrupt = st.session_state.pending_interrupt
         if interrupt is not None:
@@ -520,22 +573,43 @@ def render_chat() -> None:
                 msg = st.text_input("msg", placeholder="질문을 입력하세요...", label_visibility="collapsed")
                 sent = st.form_submit_button("전송", use_container_width=True, type="primary")
             if sent and msg.strip():
-                out = session.chat(msg.strip())
-                st.session_state.pending_interrupt = out["interrupt"]
+                st.session_state.pending_chat_message = msg.strip()
                 st.rerun()
 
 
 def render_vocab_grammar(material) -> None:
     st.markdown('<div class="label" style="margin-bottom:10px;">핵심 단어</div>', unsafe_allow_html=True)
-    for term in (material.key_terms + material.basic_vocab)[:6]:
+    for term in material.basic_vocab:
         st.markdown(
-            f'<div class="vocab-row"><b>{term.term}</b><span>{term.meaning}</span></div>',
+            f"""
+            <div class="vocab-row">
+              <div class="vocab-row-main"><b>{term.term}</b><span>{term.meaning}</span></div>
+              <div class="vocab-example">"{term.example}"</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    st.markdown('<div class="label" style="margin:14px 0 10px;">전문 용어</div>', unsafe_allow_html=True)
+    for term in material.key_terms:
+        st.markdown(
+            f"""
+            <div class="vocab-row">
+              <div class="vocab-row-main"><b>{term.term}</b><span>{term.meaning}</span></div>
+              <div class="vocab-example">"{term.example}"</div>
+            </div>
+            """,
             unsafe_allow_html=True,
         )
     st.markdown('<div class="label" style="margin:14px 0 10px;">문법 포인트</div>', unsafe_allow_html=True)
     for g in material.grammar_points:
         st.markdown(
-            f'<div class="grammar-box"><b>{g.pattern}</b><p>{g.explanation}</p></div>',
+            f"""
+            <div class="grammar-box">
+              <b>{g.pattern}</b>
+              <p>{g.explanation}</p>
+              <p class="grammar-example">"{g.example}"</p>
+            </div>
+            """,
             unsafe_allow_html=True,
         )
 
