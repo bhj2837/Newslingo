@@ -26,6 +26,7 @@ import html
 import json
 import os
 import re
+import time
 from datetime import datetime, timezone
 
 import requests
@@ -39,6 +40,11 @@ from .memory import load_profile, save_profile
 # ──────────────────────────────────────────────────────────────
 _GUARDIAN_API_URL = "https://content.guardianapis.com/search"
 _GUARDIAN_API_KEY = os.getenv("GUARDIAN_API_KEY", "")
+_GUARDIAN_REGISTER_URL = "https://bonobo.capi.gutools.co.uk/register/developer"
+
+# 동일 주제 재검색 시 결과 캐싱 (설계서 1.5 성능: 무료 API 요청 한도 절약)
+_QUERY_CACHE_TTL_SEC = 300  # 5분
+_query_cache: dict[str, tuple[float, list[dict]]] = {}
 
 # ──────────────────────────────────────────────────────────────
 # 목(mock) 데이터 — NEWSLINGO_USE_MOCK_NEWS=true 일 때 사용 (발표/오프라인용)
@@ -229,6 +235,27 @@ def _fetch_from_guardian(query: str) -> list[dict]:
     return resp.json().get("response", {}).get("results", [])
 
 
+def _fetch_raw_articles(query: str) -> list[dict]:
+    """mock 또는 Guardian 원본 응답을 얻는다.
+
+    mock 모드가 아니면 동일 쿼리를 TTL(_QUERY_CACHE_TTL_SEC) 동안 캐싱해
+    불필요한 API 호출을 줄인다 (설계서 1.5 성능: 동일 주제 재검색 시 결과 캐싱).
+    실패(예외)는 캐싱하지 않으므로 재시도 시 항상 새로 호출한다.
+    """
+    if config.USE_MOCK_NEWS:
+        return _MOCK_ARTICLES
+
+    cache_key = query.strip().lower()
+    now = time.time()
+    cached = _query_cache.get(cache_key)
+    if cached is not None and now - cached[0] < _QUERY_CACHE_TTL_SEC:
+        return cached[1]
+
+    raw = _fetch_from_guardian(query)
+    _query_cache[cache_key] = (now, raw)
+    return raw
+
+
 @tool
 def news_search(query: str, exclude_urls: list[str] | None = None) -> str:
     """사용자가 요청한 학습 주제와 관련된 최신 영문 뉴스 기사를 검색합니다.
@@ -241,26 +268,25 @@ def news_search(query: str, exclude_urls: list[str] | None = None) -> str:
     """
     exclude = set(exclude_urls or [])
 
+    if not config.USE_MOCK_NEWS and not _GUARDIAN_API_KEY:
+        return json.dumps(
+            {
+                "error": (
+                    "GUARDIAN_API_KEY 가 없습니다. .env 에 키를 설정하거나 "
+                    "목 모드(NEWSLINGO_USE_MOCK_NEWS=true)를 사용하세요. "
+                    f"무료 키 발급: {_GUARDIAN_REGISTER_URL}"
+                ),
+                "articles": [],
+            },
+            ensure_ascii=False,
+        )
+
     # 설계서 1.5 안정성: 실패 시 1회 재시도 후 안내 메시지 반환
+    # (단, 인증 실패는 재시도해도 결과가 같으므로 즉시 종료)
     last_error: Exception | None = None
     for attempt in range(config.NEWS_SEARCH_MAX_RETRY + 1):
         try:
-            if config.USE_MOCK_NEWS:
-                raw = _MOCK_ARTICLES
-            elif not _GUARDIAN_API_KEY:
-                return json.dumps(
-                    {
-                        "error": (
-                            "GUARDIAN_API_KEY 가 없습니다. .env 에 키를 설정하거나 "
-                            "목 모드(NEWSLINGO_USE_MOCK_NEWS=true)를 사용하세요. "
-                            "무료 키 발급: https://bonobo.capi.gutools.co.uk/register/developer"
-                        ),
-                        "articles": [],
-                    },
-                    ensure_ascii=False,
-                )
-            else:
-                raw = _fetch_from_guardian(query)
+            raw = _fetch_raw_articles(query)
 
             articles = [
                 a for a in (_normalize(x) for x in raw)
@@ -271,6 +297,21 @@ def news_search(query: str, exclude_urls: list[str] | None = None) -> str:
                     {"error": "검색 결과가 없습니다.", "articles": []}, ensure_ascii=False
                 )
             return json.dumps({"articles": articles}, ensure_ascii=False)
+
+        except requests.exceptions.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            if status in (401, 403):
+                return json.dumps(
+                    {
+                        "error": (
+                            "GUARDIAN_API_KEY 가 유효하지 않습니다 (인증 실패, "
+                            f"HTTP {status}). 키를 다시 확인해주세요: {_GUARDIAN_REGISTER_URL}"
+                        ),
+                        "articles": [],
+                    },
+                    ensure_ascii=False,
+                )
+            last_error = exc  # 4xx(429 등)/5xx 는 재시도 대상
 
         except Exception as exc:  # noqa: BLE001 - 재시도 목적
             last_error = exc
@@ -302,6 +343,10 @@ def update_preference(
     if level is not None and level not in config.LEVELS:
         # 설계서 2.5: 값 유효성 검증 실패 시 예외 발생, Store 변경 안 함
         raise ValueError(f"level 은 {config.LEVELS} 중 하나여야 합니다. (받은 값: {level!r})")
+    if topic is not None:
+        topic = topic.strip()
+        if not topic:
+            raise ValueError("topic 은 빈 문자열일 수 없습니다.")
     if topic is None and level is None:
         raise ValueError("topic 또는 level 중 최소 하나는 지정해야 합니다.")
 
