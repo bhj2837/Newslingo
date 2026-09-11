@@ -549,6 +549,10 @@ def render_chat() -> None:
                     unsafe_allow_html=True,
                 )
 
+        # 스크롤 스크립트는 srcdoc 이 바뀔 때만 다시 실행된다. 내용이 매번 같으면
+        # Streamlit 이 iframe 을 재마운트하지 않아 최초 1회만 돌고 끝난다.
+        # 대화가 늘어날 때마다 값이 바뀌는 토큰을 넣어 강제로 다시 마운트시킨다.
+        _scroll_token = f"{len(session.chat_log)}-{1 if pending_msg is not None else 0}"
         components.html(
             """
             <script>
@@ -564,11 +568,18 @@ def render_chat() -> None:
                 }
                 return null;
               }
-              const target = findScrollable(root) || root;
-              target.scrollTop = target.scrollHeight;
+              // 말풍선 레이아웃이 끝나야 scrollHeight 가 확정되므로,
+              // 몇 프레임에 걸쳐 반복해서 바닥에 붙인다.
+              let tries = 0;
+              (function stick(){
+                const target = findScrollable(root) || root;
+                target.scrollTop = target.scrollHeight;
+                if (++tries < 15) requestAnimationFrame(stick);
+              })();
             })();
             </script>
-            """,
+            <!-- scroll-token: TOKEN -->
+            """.replace("TOKEN", _scroll_token),
             height=0,
         )
 
