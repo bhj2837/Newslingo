@@ -65,25 +65,49 @@ ArticleStudyMaterial 스키마에 맞춰:
 """
 
 # 퀴즈 생성 : 기사 + 채팅 로그 근거 (설계서 2.2 9단계, 테스트 TS-07)
-QUIZ_TEMPLATE = """아래 기사와 학습 중 나눈 대화를 근거로 영어 학습 퀴즈 5문항을 만드세요.
-난이도: {level}
+QUIZ_TEMPLATE = """Create an English-learning quiz of exactly 5 questions,
+based on the article below and the learning chat that followed.
+Learner level: {level}
 
-[기사 본문]
+[ARTICLE]
 {article_text}
 
-[학습 중 대화 로그]
+[CHAT LOG FROM THE LEARNING SESSION]
 {chat_log}
 
-규칙(QuizSet 스키마):
-- 정확히 5문항, 각 문항 choices 는 4개. answer 는 choices 중 하나와 문자열이 정확히 일치.
-- **영어 실력을 묻는 문항으로 만드세요.** 기사 줄거리를 기억하는지 묻는 상식 퀴즈가 아닙니다.
-- 문항 구성: **어휘 2문항 + 문법 1문항 + 문맥상 의미 파악 1문항 + 내용 이해 1문항.**
-- 어휘·문법 문항은 **기사에 나온 영어 표현을 원문 그대로 인용**해서 출제합니다.
-- 오답 3개는 정답과 **같은 품사·비슷한 길이·그럴듯한 뜻**으로 만들어 한눈에 티나지 않게 합니다.
-- question 의 지시문과 explanation 은 한국어로 쓰되, **영어 표현은 원문 그대로** 인용합니다.
-- explanation 에는 정답 근거와 함께 **오답이 왜 틀렸는지**도 적습니다.
+RULES (QuizSet schema):
+- Exactly 5 questions. Each question has exactly 4 choices.
+  `answer` must match one of `choices` exactly, character for character.
+- **Write everything in English** — question, choices, and explanation.
+  The learner is Korean, so keep the wording simple enough for the {level} level,
+  but do not switch to Korean.
+- **Test English ability, not memory of the story.** Do not ask which country was
+  mentioned or what the company announced. Ask what a word means, how a structure
+  works, what a phrase implies in context.
 
-[좋은 문항 예]
-  question : 기사의 "Criminals ... have attempted to use" 에서 attempt 의 뜻으로 알맞은 것은?
-  choices  : ["시도하다", "포기하다", "완료하다", "거부하다"]
+QUESTION MIX — follow this exactly:
+  Q1, Q2 : VOCABULARY. Pick words that actually appear in the article and quote the
+           original sentence fragment they appear in.
+  Q3     : GRAMMAR. Quote a sentence from the article and ask about its structure
+           (tense, voice, modal, clause type ...).
+  Q4     : MEANING IN CONTEXT. An idiom, a figurative phrase, or a word whose meaning
+           shifts in this article's context.
+  Q5     : **FROM THE CHAT LOG.** Look at what the learner asked about during the chat
+           — a word, a phrase, an expression — and turn it into a question.
+           Use only chat turns that relate to English or to this article.
+           Ignore off-topic chatter (general advice, methodology talk, small talk).
+           If the chat log has nothing usable, fall back to one more vocabulary
+           question from the article.
+
+DISTRACTORS:
+  Same part of speech as the answer, similar length, plausible meaning.
+  No 'none of the above', no joke options.
+
+[GOOD EXAMPLE]
+  question : In "Criminals ... have attempted to use Anthropic's models",
+             what does "attempted" mean?
+  choices  : ["tried", "refused", "finished", "forgot"]
+  answer   : "tried"
+  explanation: "Attempt" means to try to do something. "Refused" is the opposite,
+             "finished" means completing it, and "forgot" is unrelated to trying.
 """

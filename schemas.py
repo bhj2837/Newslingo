@@ -113,17 +113,22 @@ class QuizQuestion(BaseModel):
     """4지선다 퀴즈 1문항."""
 
     question: str = Field(
-        description="문제. 지시문은 한국어로 쓰되 **영어 표현·문장은 원문 그대로 인용**한다. "
-        "기사 내용 상식이 아니라 **영어 실력**을 묻는 문항으로 만들 것."
+        description="Write the question in ENGLISH. Quote the article's original English "
+        "wording when the question is about a word, phrase, or grammar point. "
+        "Test ENGLISH ABILITY, not recall of the article's storyline."
     )
     choices: list[str] = Field(
-        description="선택지 4개. 오답 3개도 **같은 품사·비슷한 길이·그럴듯한 뜻**으로 만들어 "
-        "정답이 한눈에 티나지 않게 한다. 'none of the above' 같은 회피 선택지 금지.",
+        description="Exactly 4 options, all in ENGLISH. The 3 distractors must be the same "
+        "part of speech, similar in length, and plausible, so the answer is not obvious at a "
+        "glance. Never use escape options like 'none of the above'.",
         min_length=4, max_length=4,
     )
-    answer: str = Field(description="정답 — choices 중 하나와 문자열이 정확히 일치해야 함")
+    answer: str = Field(
+        description="The correct option — must match one of `choices` exactly, character for character"
+    )
     explanation: str = Field(
-        description="왜 그 답인지, 그리고 **오답이 왜 틀렸는지**까지 한국어로 설명"
+        description="Explain in ENGLISH why the answer is correct AND why each distractor is wrong. "
+        "Keep it short enough for a learner at the given level to follow."
     )
 
 
