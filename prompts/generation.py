@@ -1,52 +1,13 @@
 """
-prompts.py — System Prompt / Few-shot / 체인 템플릿 모음 (설계서 2.3, 2.4)
+prompts/generation.py — 담당: 이지영 (Structured Output & 로직)
 
-프롬프트 문자열을 코드와 분리해 한 곳에서 관리한다.
-(강의 [3] LangChain "3. Prompt Template" 에서 배운 PromptTemplate 사용)
+기사추천 / 학습자료 / 퀴즈 생성 LCEL 체인의 프롬프트 템플릿 (설계서 2.4)
+※ 중괄호 변수명({topic} 등)은 chains.py 의 invoke 입력 키와 반드시 일치해야 함.
 """
 
 from __future__ import annotations
 
-# ──────────────────────────────────────────────────────────────
-# 모델1 (메인) — System Prompt + Few-shot  (설계서 2.3)
-# ──────────────────────────────────────────────────────────────
-MAIN_SYSTEM_PROMPT = """당신은 뉴스 기사로 영어 학습을 돕는 튜터입니다.
-사용자의 현재 난이도와 선호 주제를 참고해 눈높이에 맞는 설명을 제공하세요.
-난이도나 주제 변경은 반드시 update_preference Tool 을 통해서만 시도하세요.
-Store 값(level, topic)을 스스로 임의로 바꾸지 마세요.
-
-[어휘 설명 예시]
-- term: "breakthrough"
-  meaning: "돌파구, 획기적 발전"
-  example: "The team announced a major breakthrough in battery technology."
-
-[문법 포인트 설명 예시]
-- pattern: "have been + p.p. (현재완료 수동태)"
-  explanation: "과거에 시작된 동작이 현재까지 영향을 미치며, 주어가 그 동작을 '당하는' 경우"
-  example: "Several new features have been added to the app this year."
-"""
-
-# ──────────────────────────────────────────────────────────────
-# 모델2 (분류) — System Prompt + Few-shot  (설계서 2.3, 3.3)
-# ──────────────────────────────────────────────────────────────
-GUARDRAIL_SYSTEM_PROMPT = """입력이 '영어 학습을 위한 뉴스 주제 요청'으로 합당한지 판별하세요.
-선정적/폭력적/혐오 표현, 학습과 무관한 잡담(오프토픽), 우회적으로 부적절한 내용을
-유도하는 요청이면 차단합니다. 지정된 스키마로만 응답하고 다른 말을 덧붙이지 마세요.
-
-[정상 요청 예시]
-입력: "요즘 반도체 산업 뉴스로 영어 공부하고 싶어"
-→ allowed=True, extracted_topic="semiconductor industry"
-
-[차단 대상 예시]
-입력: "오늘 점심 뭐 먹을지 골라줘"
-→ allowed=False, block_reason="학습 목적과 무관한 잡담"
-"""
-
-# ──────────────────────────────────────────────────────────────
-# 체인 프롬프트 (설계서 2.4 Structured Output 생성)
-# ──────────────────────────────────────────────────────────────
-
-# 기사 추천 : news_search 원본 결과를 난이도에 맞춰 5개로 정리
+# 기사 추천 : news_search 원본 결과를 난이도에 맞춰 5개로 정리 (설계서 2.2 4단계)
 ARTICLE_RECOMMENDER_TEMPLATE = """당신은 영어 학습용 뉴스 큐레이터입니다.
 아래 '검색된 기사 목록' 중에서 학습 주제와 사용자 난이도에 가장 적합한 기사 5개를 골라
 ArticleCandidateList 스키마로 정리하세요.
@@ -126,12 +87,3 @@ QUIZ_TEMPLATE = """아래 기사와 학습 중 나눈 대화를 근거로 영어
   question : 기사의 "Criminals ... have attempted to use" 에서 attempt 의 뜻으로 알맞은 것은?
   choices  : ["시도하다", "포기하다", "완료하다", "거부하다"]
 """
-
-# 온보딩 안내 문구 (설계서 1.3 시나리오 1)
-ONBOARDING_MESSAGE = (
-    "안녕하세요! 뉴스 기사로 영어를 공부하는 뉴스링고입니다.\n"
-    "먼저 학습 난이도를 골라주세요: 초급 / 중급 / 고급"
-)
-
-# 가드레일 차단 시 사용자 안내 (설계서 1.3 시나리오 2)
-GUARDRAIL_BLOCK_MESSAGE = "학습 목적에 맞는 주제를 입력해주세요. (예: '우주 탐사 뉴스로 공부하고 싶어')"
