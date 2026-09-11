@@ -52,6 +52,7 @@ class LearningSession:
     unread_candidates: list[ArticleCandidate] = field(default_factory=list)
     seen_article_urls: set[str] = field(default_factory=set)
     last_quiz: QuizSet | None = None
+    study_material: ArticleStudyMaterial | None = None  # 2-a: chat()에서 Context로 주입하려고 캐시
 
     def __post_init__(self) -> None:
         self._agent = build_agent()
@@ -130,19 +131,22 @@ class LearningSession:
             "text": raw.get("content") or article.summary,
         }
         self.chat_log = []
+        self.study_material = None  # 새 기사로 바뀌면 이전 학습자료는 더 이상 유효하지 않음
         self.unread_candidates = [
             a for a in self.unread_candidates if a.url != article.url
         ]
 
     def make_study_material(self) -> ArticleStudyMaterial:
         self._require_article()
-        return study_material_chain.invoke(
+        material = study_material_chain.invoke(
             {
                 "level": self.profile["level"],
                 "article_title": self.current_article["title"],
                 "article_text": self.current_article["text"],
             }
         )
+        self.study_material = material  # 2-a: chat()에서 Agent 에게 주입할 수 있게 캐시
+        return material
 
     # ──────────────────────────────────────────────────────
     # 7단계. 자유 채팅 학습 지원 (설계서 2.2, 테스트 TS-05/TS-06)
@@ -161,7 +165,7 @@ class LearningSession:
                 "configurable": {"thread_id": self.thread_id},
                 "recursion_limit": 2 * config.TOOL_CALL_LIMIT + 3,
             },
-            context=Context(user_id=self.user_id),
+            context=self._build_context(),
         )
         return self._unpack(result)
 
@@ -178,7 +182,7 @@ class LearningSession:
         result = self._agent.invoke(
             Command(resume={"decisions": [decision]}),
             config={"configurable": {"thread_id": self.thread_id}},
-            context=Context(user_id=self.user_id),
+            context=self._build_context(),
         )
         return self._unpack(result)
 
@@ -229,6 +233,39 @@ class LearningSession:
     def _require_article(self) -> None:
         if self.current_article is None:
             raise RuntimeError("먼저 select_article() 로 기사를 선택하세요.")
+
+    def _build_context(self) -> Context:
+        """agent.invoke(context=...) 에 넘길 Context 를 매 호출마다 새로 만든다.
+
+        2-a 수정: 현재 선택된 기사 원문 + (있으면) 학습자료 요약을 담아서
+        middleware.profile_injection 이 system prompt 에 주입할 수 있게 한다.
+        기사를 아직 안 골랐으면 article_* 는 빈 문자열로 남아 기존 동작과 동일.
+        """
+        if self.current_article is None:
+            return Context(user_id=self.user_id)
+        return Context(
+            user_id=self.user_id,
+            article_title=self.current_article["title"],
+            article_text=self.current_article["text"],
+            study_material_summary=self._material_summary(),
+        )
+
+    def _material_summary(self) -> str:
+        """study_material 캐시를 system prompt 에 넣기 좋은 텍스트 블록으로 정리."""
+        material = self.study_material
+        if material is None:
+            return ""
+
+        lines = [f"번역:\n{material.translated_text}", "", "전문 용어:"]
+        lines += [f"- {t.term} ({t.meaning}): {t.example}" for t in material.key_terms]
+        lines += ["", "기본 단어:"]
+        lines += [f"- {t.term} ({t.meaning}): {t.example}" for t in material.basic_vocab]
+        lines += ["", "문법 포인트:"]
+        lines += [
+            f"- {g.pattern}: {g.explanation}\n  예문: {g.example}"
+            for g in material.grammar_points
+        ]
+        return "\n".join(lines)
 
     def _unpack(self, result: dict) -> dict:
         interrupts = result.get("__interrupt__")

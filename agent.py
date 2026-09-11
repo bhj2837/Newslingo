@@ -27,9 +27,18 @@ from .tools import TOOLS
 
 @dataclass
 class Context:
-    """Runtime Context (설계서 3.1) — 앱 호출 시 1회 전달, 세션 내 불변."""
+    """Runtime Context (설계서 3.1) — 매 invoke() 호출마다 전달.
+
+    user_id 는 세션 내내 불변이지만, article_* 필드는 사용자가 기사를 선택/교체할
+    때마다 service.py 가 최신 값으로 다시 채워서 넘긴다 (2-a 수정: 채팅 Agent 가
+    현재 기사 원문/학습자료를 전혀 모르던 문제 — profile_injection 미들웨어가
+    이 필드들을 읽어 system prompt 에 주입한다).
+    """
 
     user_id: str
+    article_title: str = ""
+    article_text: str = ""
+    study_material_summary: str = ""
 
 
 def build_agent():

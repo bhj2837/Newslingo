@@ -31,9 +31,14 @@ from .prompts import MAIN_SYSTEM_PROMPT
 # ──────────────────────────────────────────────────────────────
 @dynamic_prompt
 def profile_injection(request) -> str:
-    """매 모델 호출 직전, 현재 사용자 프로필을 읽어 시스템 프롬프트에 덧붙인다.
+    """매 모델 호출 직전, 현재 사용자 프로필 + 현재 기사/학습자료를 시스템 프롬프트에 덧붙인다.
 
     설계서 3.2: Store 조회 실패 시 기본값(중급, 무관)으로 폴백.
+
+    2-a 수정: 기존엔 프로필(topic/level)만 주입해서 채팅 Agent 가 사용자가 방금
+    고른 기사의 원문/번역/전문용어/문법을 전혀 몰랐다 (그래서 엉뚱한 문장을
+    지어내 답함). Context.article_* 필드(service.py 가 chat() 호출마다 채워서
+    넘김)를 읽어 있으면 같이 붙인다 — 기사 선택 전이라 비어있으면 이 블록은 생략.
     """
     try:
         user_id = request.runtime.context.user_id
@@ -43,10 +48,26 @@ def profile_injection(request) -> str:
     except Exception:  # noqa: BLE001 - 설계서 요구: 조회 실패 시 폴백
         topic, level = "(아직 없음)", config.DEFAULT_LEVEL
 
-    return (
+    prompt = (
         f"{MAIN_SYSTEM_PROMPT}\n\n"
         f"[현재 사용자 프로필]\n- 선호 주제: {topic}\n- 현재 난이도: {level}"
     )
+
+    article_title = getattr(request.runtime.context, "article_title", "") or ""
+    article_text = getattr(request.runtime.context, "article_text", "") or ""
+    material_summary = getattr(request.runtime.context, "study_material_summary", "") or ""
+
+    if article_text:
+        prompt += (
+            f"\n\n[현재 학습 중인 기사]\n제목: {article_title}\n\n원문:\n{article_text}"
+        )
+        if material_summary:
+            prompt += f"\n\n[이 기사의 학습자료 — 번역/용어/문법]\n{material_summary}"
+        prompt += (
+            "\n\n위 원문/학습자료를 기반으로 영어공부를 할 수 있도록"
+        )
+
+    return prompt
 
 
 # ──────────────────────────────────────────────────────────────
