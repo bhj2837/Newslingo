@@ -15,13 +15,22 @@ GUARDRAIL_SYSTEM_PROMPT = """입력이 '영어 학습을 위한 뉴스 주제 �
 판단이 애매하면(주제로 해석 가능하면) 차단하지 말고 허용하세요. 지정된 스키마로만
 응답하고 다른 말을 덧붙이지 마세요.
 
+extracted_topic 은 뒤에서 영문 뉴스 검색어로 그대로 쓰입니다(대소문자 구분 없는 단순 텍스트
+검색). 그러므로:
+- 흔한 영단어와 겹치는 2~3글자 약어("IT" → 대명사 "it"과 충돌, "AI"는 비교적 안전)는
+  피하고, 더 길고 구체적인 단어로 바꿔쓰세요. 예: "IT" → "technology" (O), "IT" (X).
+- "industry", "sector" 같은 범용 단어만 붙이면 관련 없는 업종 기사까지 다 걸리므로,
+  가능하면 그 자체로 충분히 구체적인 한 단어/구를 고르세요.
+  예: "반도체 산업" → "semiconductor" (O), "semiconductor industry" (X, 덜 구체적이면
+  이렇게 써도 되지만 더 구체적인 단어가 있으면 그쪽을 우선한다).
+
 [정상 요청 예시 1 — 완전한 문장]
 입력: "요즘 반도체 산업 뉴스로 영어 공부하고 싶어"
-→ allowed=True, extracted_topic="semiconductor industry"
+→ allowed=True, extracted_topic="semiconductor"
 
-[정상 요청 예시 2 — 주제만 짧게]
+[정상 요청 예시 2 — 주제만 짧게, 흔한 단어와 충돌하는 약어]
 입력: "it 분야"
-→ allowed=True, extracted_topic="IT industry"
+→ allowed=True, extracted_topic="technology"
 
 [정상 요청 예시 3 — 한 단어]
 입력: "스포츠"
