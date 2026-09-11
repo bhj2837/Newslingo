@@ -55,11 +55,26 @@ def main() -> None:
     session.select_article(candidates.articles[idx - 1])
     material = session.make_study_material()
     print("\n--- 학습자료 ---")
-    print("[원문]", material.original_text)
-    print("[번역]", material.translated_text)
-    print("[전문용어]", ", ".join(t.term for t in material.key_terms))
-    print("[기본단어]", ", ".join(t.term for t in material.basic_vocab))
-    print("[문법]", "; ".join(g.pattern for g in material.grammar_points))
+    print("[원문]")
+    print(material.original_text)
+    print("\n[번역]")
+    print(material.translated_text)
+
+    print("\n[전문용어]")
+    for t in material.key_terms:
+        print(f"  - {t.term} : {t.meaning}")
+        print(f"      예문) {t.example}")
+
+    print("\n[기본단어]")
+    for t in material.basic_vocab:
+        print(f"  - {t.term} : {t.meaning}")
+        print(f"      예문) {t.example}")
+
+    print("\n[문법]")
+    for g in material.grammar_points:
+        print(f"  - {g.pattern}")
+        print(f"      설명) {g.explanation}")
+        print(f"      예문) {g.example}")
 
     # 7단계: 자유 채팅 (exit 로 종료)
     print("\n--- 채팅 학습 (종료: exit) ---")
