@@ -11,8 +11,7 @@ UI 가 붙기 전까지 이 파일로 전체 플로우를 시연/검증한다.
 
 from __future__ import annotations
 
-import json
-
+from . import config
 from .service import LearningSession
 
 
@@ -47,9 +46,11 @@ def main() -> None:
     # 3~4단계: 기사 5개 추천 (최초 1회)
     candidates = session.recommend_articles(topic).articles
 
-    # 5~7단계: 기사 선택 → 학습자료 → 채팅. "다음 기사" 버튼을 누르면 이 블록을
-    # 다시 돈다 (문제 5: 예전엔 채팅 중 "다른 기사"를 Agent가 news_search 를 계속
-    # 호출하며 처리하려다 recursion limit 크래시가 났음 — 이제 버튼으로만 전환).
+    # 5~14단계: 기사 선택 → 학습자료 → 채팅 → 퀴즈 → 채점/난이도 조정을 기사
+    # 단위로 반복한다. n(다른 기사)/q(학습 종료) 둘 다 "이 기사에서 넘어간다"는
+    # 신호일 뿐이고, 어느 쪽이든 넘어가기 전에 반드시 퀴즈를 본다 — 예전엔 n을
+    # 누르면 퀴즈 없이 바로 다음 기사로 넘어가버렸는데, 그러면 방금 읽은 기사에
+    # 대한 학습 점검이 통째로 빠지므로 이제는 무조건 퀴즈를 거치게 바꿨다.
     while True:
         for i, art in enumerate(candidates, 1):
             print(f"  [{i}] {art.title}  ({art.source}, {art.published_date})")
@@ -84,16 +85,12 @@ def main() -> None:
         # 7단계: 자유 채팅
         print("\n--- 채팅 학습 ---")
         print("[버튼]  다른 기사 보기: n   |   학습 종료: q\n")
-        want_next_article = False
-        want_end_study = False
-        while True:
+        leaving = False
+        while not leaving:
             msg = input("나 > ").strip()
-            if msg.lower() in {"q", "exit", "quit", "끝", "끝내기"}:
-                want_end_study = True
-                break
-            if msg.lower() in {"n", "다음", "다음기사", "다른기사"}:
-                want_next_article = True
-                break
+            if msg.lower() in {"q", "exit", "quit", "끝", "끝내기", "n", "다음", "다음기사", "다른기사"}:
+                leaving = True
+                continue
 
             # 문제 5/6/7: "다른 기사"/"그만할래" 같은 자연어는 Agent(LLM)에게
             # 넘기지 않고 규칙 기반으로만 감지해서 버튼 사용을 안내한다.
@@ -112,42 +109,51 @@ def main() -> None:
                 out = session.confirm_preference(approve)
             print("튜터 >", out["reply"], "\n")
 
+        want_end_study = msg.lower() in {"q", "exit", "quit", "끝", "끝내기"}
+
+        # 8~9단계: 이 기사에 대한 퀴즈 (n/q 상관없이 항상 실행)
+        quiz = session.make_quiz()
+        answers: list[str] = []
+        print("\n--- 퀴즈 5문항 ---")
+        for i, q in enumerate(quiz.questions, 1):
+            print(f"Q{i}. {q.question}")
+            for c in q.choices:
+                print(f"   - {c}")
+            answers.append(input("   내 답 > ").strip())
+
+        # 10~11단계: 채점 + 난이도 추천
+        result, recommendation = session.grade(answers)
+        print(f"\n채점: {result.correct}/{result.total}  (정답률 {result.accuracy:.0%})")
+        print("추천:", recommendation.message)
+
+        # 12~14단계: 난이도 조정 — 추천이 '유지'여도 사용자가 직접 상/하향을
+        # 고를 수 있어야 하므로, 추천 방향과 무관하게 항상 물어본다 (1차 선택 → HITL 2차 재확인)
+        current_level = session.profile["level"]
+        current_idx = config.LEVELS.index(current_level)
+        choice = _pick(f"난이도 조정 (추천: {recommendation.message})", ["상향", "하향", "유지"])
+        if choice == "상향" and current_idx < len(config.LEVELS) - 1:
+            target_level = config.LEVELS[current_idx + 1]
+        elif choice == "하향" and current_idx > 0:
+            target_level = config.LEVELS[current_idx - 1]
+        else:
+            target_level = current_level  # '유지' 선택, 또는 이미 최상급/최하급
+
+        out = session.request_level_change(target_level)
+        if out["interrupt"] is not None:
+            print("🔔 HITL:", out["interrupt"])
+            approve = input("   정말 변경할까요? (y/n) > ").strip().lower() == "y"
+            out = session.confirm_preference(approve)
+        print("튜터 >", out["reply"])
+
         if want_end_study:
             break
 
-        if want_next_article:
-            unread = session.list_unread()
-            candidates = unread if unread else session.recommend_articles(topic).articles
-            if not candidates:
-                print("→ 더 이상 추천할 기사가 없어요. 학습을 종료합니다.\n")
-                break
-            print()
-
-    # 8~9단계: 퀴즈 생성
-    quiz = session.make_quiz()
-    answers: list[str] = []
-    print("\n--- 퀴즈 5문항 ---")
-    for i, q in enumerate(quiz.questions, 1):
-        print(f"Q{i}. {q.question}")
-        for c in q.choices:
-            print(f"   - {c}")
-        answers.append(input("   내 답 > ").strip())
-
-    # 10~11단계: 채점 + 난이도 추천
-    result, recommendation = session.grade(answers)
-    print(f"\n채점: {result.correct}/{result.total}  (정답률 {result.accuracy:.0%})")
-    print("추천:", recommendation.message)
-
-    # 12~14단계: 난이도 조정 (1차 선택 → HITL 2차 재확인)
-    if recommendation.is_change():
-        first = _pick("난이도 조정", ["상향", "하향", "유지"])
-        if first in {"상향", "하향"}:
-            out = session.propose_level_change(recommendation)
-            if out["interrupt"] is not None:
-                print("🔔 HITL:", out["interrupt"])
-                approve = input("   정말 변경할까요? (y/n) > ").strip().lower() == "y"
-                out = session.confirm_preference(approve)
-            print("튜터 >", out["reply"])
+        unread = session.list_unread()
+        candidates = unread if unread else session.recommend_articles(topic).articles
+        if not candidates:
+            print("→ 더 이상 추천할 기사가 없어요. 학습을 종료합니다.\n")
+            break
+        print()
 
     print(f"\n최종 프로필: {session.profile}")
     print("=" * 60)

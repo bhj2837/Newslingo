@@ -251,17 +251,21 @@ class LearningSession:
     # ──────────────────────────────────────────────────────
     # 12~14단계. 난이도 조정 (1차 선택 → HITL 2차 재확인)
     # ──────────────────────────────────────────────────────
-    def propose_level_change(self, recommendation: LevelRecommendation) -> dict:
-        """사용자가 상/하/유지 버튼을 1차 선택했을 때 호출.
+    def request_level_change(self, target_level: str) -> dict:
+        """사용자가 상/하/유지 버튼으로 '직접 고른' 난이도로 변경을 요청한다.
 
-        'keep' 이면 아무 것도 하지 않고, 변경이면 Agent 에게 update_preference 를
-        요청 → HITL 이 2차 재확인 interrupt 를 띄운다.
+        예전 propose_level_change(recommendation) 은 시스템 추천이 'keep'이면
+        무조건 아무 것도 안 해서, 추천이 '유지'로 나와도 사용자가 그와 무관하게
+        상향/하향을 직접 선택할 수 있어야 한다는 요구를 반영 못 했다. 이제는
+        추천 방향과 무관하게, 사용자가 실제로 고른 target_level 을 그대로 받아서
+        현재 값과 다를 때만 update_preference(HITL 2차 재확인)를 태운다.
         """
-        if not recommendation.is_change():
-            return {"reply": recommendation.message, "interrupt": None}
+        if target_level not in config.LEVELS:
+            raise ValueError(f"난이도는 {config.LEVELS} 중 하나여야 합니다.")
+        if target_level == self.profile["level"]:
+            return {"reply": f"현재 '{target_level}' 난이도를 유지할게요.", "interrupt": None}
         return self.chat(
-            f"난이도를 '{recommendation.suggested_level}'(으)로 변경해줘. "
-            f"update_preference Tool 을 사용해."
+            f"난이도를 '{target_level}'(으)로 변경해줘. update_preference Tool 을 사용해."
         )
 
     # ──────────────────────────────────────────────────────
