@@ -20,6 +20,12 @@ import sys
 from pathlib import Path
 
 import streamlit as st
+from dotenv import load_dotenv
+
+# .env 는 원래 newslingo.config 가 import 시점에 읽어들이는데, 그건 이 파일
+# 아래쪽에서 일어난다. 목업/실제 모드를 그보다 먼저 판단해야 하므로, 여기서
+# 미리 .env 를 로드해 OPENAI_API_KEY 가 실제로 설정돼 있는지부터 확인한다.
+load_dotenv(override=True)
 
 # OPENAI_API_KEY 가 없으면 목업 세션(mock_service.py)을 쓴다. 단, chains.py 가
 # 모듈 최상단에서 `get_main_model()` 을 호출해 ChatOpenAI 를 즉시 생성하기 때문에,
