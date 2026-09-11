@@ -146,6 +146,8 @@ class LearningSession:
         self.current_article = {
             "title": article.title,
             "url": article.url,
+            "source": article.source,
+            "date": article.published_date,
             "text": raw.get("content") or article.summary,
         }
         self.chat_log = []
