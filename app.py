@@ -173,6 +173,31 @@ div[data-testid="stElementContainer"]:has(.news-card){ flex:1; display:flex; }
 .bubble-typing span:nth-child(3){ animation-delay:.3s; }
 @keyframes typing-bounce{ 0%, 60%, 100%{ transform:translateY(0); opacity:.4; } 30%{ transform:translateY(-4px); opacity:1; } }
 
+/* 퀴즈 화면 */
+:root{ --good:oklch(0.62 0.13 145); --good-soft:oklch(0.96 0.03 145); --bad:oklch(0.62 0.16 25); --bad-soft:oklch(0.96 0.03 25); }
+.quiz-question{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:15px; color:var(--ink); margin-bottom:2px; }
+div[data-testid="stForm"] div[data-testid="stVerticalBlockBorderWrapper"]{
+  border-radius:14px !important; border-color:var(--line) !important; margin-bottom:14px;
+}
+.score-card{
+  display:flex; align-items:center; gap:28px; background:var(--surface); border:1px solid var(--line);
+  border-radius:18px; padding:26px 30px; margin-bottom:18px;
+}
+.score-number{ font-family:'Space Grotesk',sans-serif; font-size:44px; font-weight:700; color:var(--accent); line-height:1; white-space:nowrap; }
+.score-sub{ font-size:13px; color:var(--ink-3); margin-top:6px; }
+.score-label{ font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); }
+.review-row{ display:flex; align-items:flex-start; gap:12px; padding:13px 16px; border-radius:12px;
+  background:var(--bg); margin-bottom:8px; border-left:3px solid var(--line); }
+.review-row.correct{ border-left-color:var(--good); }
+.review-row.wrong{ border-left-color:var(--bad); }
+.review-row .review-q{ font-size:13.5px; font-weight:600; color:var(--ink); margin-bottom:4px; }
+.review-row .review-a{ font-size:12.5px; color:var(--ink-2); }
+.review-row .review-a b{ color:var(--ink); }
+.review-row .review-explain{ font-size:12px; color:var(--ink-3); margin-top:4px; line-height:1.5; }
+.recommend-card{ background:var(--accent-soft); border:1px solid var(--line); border-radius:16px; padding:20px 24px; margin:18px 0; }
+.recommend-card .label{ color:var(--accent); margin-bottom:6px; }
+.recommend-card p{ font-size:14px; color:var(--ink); line-height:1.6; margin:0; }
+
 /* 버튼 공통 */
 .stButton>button{
   border-radius:10px !important; font-weight:700 !important; font-size:13px !important;
@@ -637,10 +662,11 @@ def render_quiz_screen() -> None:
     if st.session_state.quiz_result is None:
         with st.form("quiz-form"):
             for i, q in enumerate(quiz.questions):
-                st.markdown(f"**Q{i + 1}. {q.question}**")
-                st.session_state.quiz_answers[i] = st.radio(
-                    f"q{i}", q.choices, key=f"quiz-q-{i}", label_visibility="collapsed"
-                )
+                with st.container(border=True):
+                    st.markdown(f'<div class="quiz-question">Q{i + 1}. {q.question}</div>', unsafe_allow_html=True)
+                    st.session_state.quiz_answers[i] = st.radio(
+                        f"q{i}", q.choices, key=f"quiz-q-{i}", label_visibility="collapsed"
+                    )
             submitted = st.form_submit_button("채점하기", type="primary")
         if submitted:
             answers = [st.session_state.quiz_answers[i] for i in range(len(quiz.questions))]
@@ -653,15 +679,49 @@ def render_quiz_screen() -> None:
     result = st.session_state.quiz_result
     recommendation: LevelRecommendation = st.session_state.level_recommendation
 
-    st.success(f"채점 완료 — {result.correct}/{result.total} 정답 (정답률 {result.accuracy:.0%})")
+    st.markdown(
+        f"""
+        <div class="score-card">
+          <div class="score-number">{result.correct}/{result.total}</div>
+          <div>
+            <div class="score-label">채점 완료</div>
+            <div class="score-sub">정답률 {result.accuracy:.0%} — 아래에서 문항별 결과를 확인하세요.</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     for d in result.details:
+        row_class = "correct" if d.is_correct else "wrong"
         icon = "✅" if d.is_correct else "❌"
-        st.markdown(f"{icon} **{d.question}** — 정답: {d.correct_answer}")
-        if not d.is_correct:
-            st.caption(f"내 답: {d.user_answer} · {d.explanation}")
+        explain_html = (
+            f'<div class="review-explain">내 답: {d.user_answer} · {d.explanation}</div>'
+            if not d.is_correct
+            else ""
+        )
+        st.markdown(
+            f"""
+            <div class="review-row {row_class}">
+              <span>{icon}</span>
+              <div style="flex:1;">
+                <div class="review-q">{d.question}</div>
+                <div class="review-a">정답: <b>{d.correct_answer}</b></div>
+                {explain_html}
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    st.markdown("---")
-    st.markdown(f"**추천**: {recommendation.message}")
+    st.markdown(
+        f"""
+        <div class="recommend-card">
+          <div class="label">추천</div>
+          <p>{recommendation.message}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     continue_label = "다음 기사로 계속하기 →" if forced else "← 학습으로 돌아가기"
 
