@@ -193,6 +193,24 @@ def _clean_text(raw: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+# 기사 본문 방어적 상한 (설계서엔 명시 없음 — 실키 테스트 중 파악한 리스크 대응).
+# type=article 필터로 라이브블로그는 걸러내지만, 드물게 아주 긴 장문 피처 기사가
+# 있을 수 있어 학습자료/퀴즈 체인에 넘기기 전 문장 경계에서 안전하게 자른다.
+_MAX_CONTENT_CHARS = 6000
+
+
+def _truncate_at_sentence(text: str, limit: int) -> str:
+    """limit 이내에서 가장 마지막 문장 경계까지만 남기고, 잘렸으면 표시를 붙인다."""
+    if len(text) <= limit:
+        return text
+    window = text[:limit]
+    # 마침표/물음표/느낌표 뒤 공백 기준으로 마지막 문장 끝을 찾는다.
+    cut = max(window.rfind(". "), window.rfind("? "), window.rfind("! "))
+    if cut > limit // 2:  # 너무 앞쪽에서 잘리면 그냥 limit 그대로 사용
+        window = window[: cut + 1]
+    return window.strip() + " [...기사 본문이 길어 이후 내용은 생략됨]"
+
+
 def _normalize(article: dict) -> dict:
     """Guardian Content API 응답 항목(또는 동일 shape 의 mock)을 공통 형태로 정리.
 
@@ -202,6 +220,7 @@ def _normalize(article: dict) -> dict:
     body_text = _clean_text(fields.get("bodyText") or "")
     trail_text = _clean_text(fields.get("trailText") or "")
     section = article.get("sectionName")
+    content = body_text or trail_text
 
     return {
         "title": _clean_text(article.get("webTitle", "")),
@@ -210,7 +229,8 @@ def _normalize(article: dict) -> dict:
         "source": f"The Guardian ({section})" if section else "The Guardian",
         "published_date": _to_ymd(article.get("webPublicationDate", "")),
         # 기사 "전문" — Guardian bodyText 는 NewsAPI content 와 달리 절단되지 않는다.
-        "content": body_text or trail_text,
+        # (단, 너무 긴 경우 방어적으로 문장 경계에서 상한을 둠 — 위 _MAX_CONTENT_CHARS)
+        "content": _truncate_at_sentence(content, _MAX_CONTENT_CHARS),
     }
 
 
@@ -218,16 +238,23 @@ def _fetch_from_guardian(query: str) -> list[dict]:
     """Guardian Content API /search 호출 (실패 시 예외를 그대로 던짐).
 
     show-fields=trailText,bodyText 로 요약(trailText)과 본문 전체(bodyText)를 함께 받는다.
-    order-by=newest 로 최신순 정렬 (설계서 취지: 최신 뉴스로 학습).
+    order-by=relevance 로 정렬 (실키 테스트 결과: newest 는 검색어와 무관한 최신 기사가
+    섞여 나옴 — 예) "climate change" 검색 시 축구 프리뷰가 1위. relevance 로 바꾸면
+    15개 전부 실제로 주제와 관련된 기사로 나옴. 학습 주제 매칭이 최신성보다 중요하다고
+    판단해 relevance 를 기본값으로 함).
+    type=article 로 liveblog/gallery/interactive/picture/audio/video/crossword 를 제외한다
+    (liveblog 는 하루 종일 갱신되는 실시간 중계라 bodyText 가 수만 자에 달해
+    "기사 한 편" 학습 취지에 맞지 않음 — 실제 키로 테스트 중 발견).
     """
     resp = requests.get(
         _GUARDIAN_API_URL,
         params={
             "q": query,
             "api-key": _GUARDIAN_API_KEY,
-            "order-by": "newest",
+            "order-by": "relevance",
             "page-size": config.NEWS_RAW_PAGE_SIZE,
             "show-fields": "trailText,bodyText",
+            "type": "article",
         },
         timeout=config.NEWS_SEARCH_TIMEOUT,
     )
