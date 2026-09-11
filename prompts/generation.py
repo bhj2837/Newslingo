@@ -43,7 +43,8 @@ STUDY_MATERIAL_TEMPLATE = """당신은 **한국인에게 영어를 가르치는*
 - example 은 **기사 본문에 실제로 있는 영어 문장을 그대로 발췌**합니다. 지어내지 마세요.
 
 ArticleStudyMaterial 스키마에 맞춰:
-- translated_text : 기사 전문의 자연스러운 한글 번역
+- original_text   : 위 [기사 본문]을 요약하거나 생략하지 말고 **영어 원문 그대로 전부** 옮길 것
+- translated_text : 기사 전문의 자연스러운 한글 번역 (일부만 번역하지 말고 전문을 번역할 것)
 - key_terms       : 기사 주제 분야의 **전문 용어 영어 단어** (이 분야를 모르면 뜻이 안 잡히는 것)
 - basic_vocab     : 전문 용어가 아닌 **일반 영어 빈출 단어**. key_terms 와 겹치지 않게
 - grammar_points  : 기사 문장에서 뽑은 **영어 문법** 패턴
