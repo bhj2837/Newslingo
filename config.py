@@ -10,11 +10,12 @@ config.py — 환경변수 로드 & 전역 상수
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
 # .env 파일을 환경변수로 로드 (강의 [3] LangChain 노트북과 동일한 방식)
-load_dotenv(override=True)
+load_dotenv(Path(__file__).with_name(".env"), override=True)
 
 
 # ──────────────────────────────────────────────────────────────

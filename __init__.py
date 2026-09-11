@@ -8,6 +8,7 @@
     session = LearningSession(user_id="user_001")
 """
 
+from . import config
 from .service import LearningSession
 
 __all__ = ["LearningSession"]
