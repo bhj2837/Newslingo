@@ -323,22 +323,29 @@ def render_onboarding() -> None:
 # 1~4단계: 주제 입력 + 기사 후보
 # ──────────────────────────────────────────────────────────────
 # 백엔드에 "주제 없이 기본 추천" API가 아직 없어서, 프론트에서 고정 주제로
-# recommend_articles()를 대신 호출해 기본 카드 5개를 채운다. 나중에 백엔드에
-# 진짜 기본 추천 기능(예: recommend_default_articles())이 생기면 이 함수
-# 내부만 그 호출로 바꾸면 된다 — 호출부(render_topic_and_candidates)는
-# 그대로 두어도 됨.
-_DEFAULT_TOPIC = "오늘의 주요 뉴스"
+# 검색을 한 번 자동 실행해 기본 카드 5개를 채운다 (사용자가 직접 "인공지능"을
+# 검색한 것과 완전히 동일한 경로 — 가드레일 → recommend_articles). 나중에
+# 백엔드에 진짜 "기본 추천" API가 생기면 _run_search() 안의 호출만 바꾸면 됨.
+_DEFAULT_TOPIC = "인공지능"
 
 
-def _get_default_candidates():
-    return list(session.recommend_articles(_DEFAULT_TOPIC).articles)
+def _run_search(topic: str) -> None:
+    guard = session.request_topic(topic)
+    if not guard.allowed:
+        st.error(session.block_message(guard))
+        return
+    resolved_topic = guard.extracted_topic or topic
+    with st.spinner("주제에 맞는 기사를 찾는 중..."):
+        candidates = session.recommend_articles(resolved_topic)
+    st.session_state.candidates = list(candidates.articles)
+    st.session_state.study_material = None
 
 
 def render_topic_and_candidates() -> None:
     if not st.session_state.candidates and not st.session_state.get("default_candidates_loaded"):
-        with st.spinner("기본 추천 기사를 불러오는 중..."):
-            st.session_state.candidates = _get_default_candidates()
         st.session_state.default_candidates_loaded = True
+        _run_search(_DEFAULT_TOPIC)
+        st.rerun()
 
     col1, col2 = st.columns([5, 1])
     with col1:
@@ -350,16 +357,8 @@ def render_topic_and_candidates() -> None:
         search_clicked = st.button("기사 찾기", use_container_width=True, type="primary")
 
     if search_clicked and topic_input.strip():
-        guard = session.request_topic(topic_input.strip())
-        if not guard.allowed:
-            st.error(session.block_message(guard))
-        else:
-            topic = guard.extracted_topic or topic_input.strip()
-            with st.spinner("주제에 맞는 기사를 찾는 중..."):
-                candidates = session.recommend_articles(topic)
-            st.session_state.candidates = list(candidates.articles)
-            st.session_state.study_material = None
-            st.rerun()
+        _run_search(topic_input.strip())
+        st.rerun()
 
     if st.session_state.candidates:
         st.markdown('<div class="label" style="margin:14px 0 8px;">추천 기사</div>', unsafe_allow_html=True)
