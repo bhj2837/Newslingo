@@ -38,6 +38,24 @@ from .schemas import (
 )
 from .tools import news_search
 
+# ──────────────────────────────────────────────────────────────
+# 채팅 중 "다른 기사"/"그만 할래" 같은 제어 의도 감지 (규칙 기반, 문제 5/6/7)
+#
+# 예전엔 이런 문구도 그냥 채팅 Agent에게 넘겨서 Tool-calling으로 처리하려 했는데,
+#   - "다른 기사"류 → news_search 를 반복 호출하다 recursion limit 크래시
+#   - "그만할래"류 → update_preference(level 변경)로 잘못 해석돼 엉뚱한 HITL 발생
+# 두 경우 다 LLM 판단에 맡기면 오류가 잦아서, 이건 아예 Agent 에게 보내지 않고
+# 여기서 규칙 기반으로만 감지한다. 실제 전환은 UI 버튼(app_cli.py 의 'n'/'q')으로만
+# 하고, 여기서 감지되면 "버튼을 눌러주세요" 안내만 돌려준다.
+# ──────────────────────────────────────────────────────────────
+_NEXT_ARTICLE_PATTERNS = (
+    "다른 기사", "다른기사", "다음 기사", "다음기사", "다른 뉴스", "다른뉴스",
+)
+_END_STUDY_PATTERNS = (
+    "그만할래", "그만할게", "그만볼래", "끝낼래", "끝낼게", "그만 공부", "공부 그만",
+    "공부 끝", "학습 종료", "학습종료", "종료할래",
+)
+
 
 @dataclass
 class LearningSession:
@@ -147,6 +165,25 @@ class LearningSession:
         )
         self.study_material = material  # 2-a: chat()에서 Agent 에게 주입할 수 있게 캐시
         return material
+
+    # ──────────────────────────────────────────────────────
+    # 6-B. 채팅 자유 텍스트의 제어 의도 감지 (문제 5/6/7, 규칙 기반)
+    # ──────────────────────────────────────────────────────
+    @staticmethod
+    def detect_control_intent(text: str) -> str | None:
+        """"다른 기사"/"그만할래" 같은 문구를 채팅 Agent 로 보내기 전에 걸러낸다.
+
+        Returns:
+            "next_article" / "end_study" / None (제어 의도 아님 → 평소처럼 chat() 호출)
+        이 메서드는 아무 것도 실행하지 않는다 — 호출부(UI/CLI)가 감지 결과를 보고
+        "버튼을 눌러주세요"라고 안내하거나, 직접 버튼 액션을 트리거해야 한다.
+        """
+        stripped = text.strip()
+        if any(p in stripped for p in _NEXT_ARTICLE_PATTERNS):
+            return "next_article"
+        if any(p in stripped for p in _END_STUDY_PATTERNS):
+            return "end_study"
+        return None
 
     # ──────────────────────────────────────────────────────
     # 7단계. 자유 채팅 학습 지원 (설계서 2.2, 테스트 TS-05/TS-06)
