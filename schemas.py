@@ -88,6 +88,7 @@ class GrammarItem(BaseModel):
 class ArticleStudyMaterial(BaseModel):
     """선택한 기사에 대한 학습자료 묶음 (설계서 2.2 6단계)."""
 
+    original_text: str = Field(description="기사 전문 영어 원문 (요약하지 않고 입력받은 본문 그대로)")
     translated_text: str = Field(description="기사 전문의 자연스러운 한글 번역본")
     key_terms: list[TermItem] = Field(
         description="기사 주제 분야의 **전문 용어 영어 단어** 3~7개. "
