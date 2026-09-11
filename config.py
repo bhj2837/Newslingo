@@ -10,22 +10,23 @@ config.py — 환경변수 로드 & 전역 상수
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
 # .env 파일을 환경변수로 로드 (강의 [3] LangChain 노트북과 동일한 방식)
-load_dotenv(override=True)
+load_dotenv(Path(__file__).with_name(".env"), override=True)
 
 
 # ──────────────────────────────────────────────────────────────
 # 1. 모델 설정 (설계서 2.3)
 # ──────────────────────────────────────────────────────────────
 # 모델1 : 메인 대화/생성 모델 - 기사 추천, 학습자료 생성, 채팅, 퀴즈 생성
-MAIN_MODEL = "gpt-4o-mini"
+MAIN_MODEL = "gpt-4o"
 MAIN_TEMPERATURE = 0.4
 
 # 모델1 실패 시 대체 모델 (ModelFallbackMiddleware, 설계서 3.2)
-FALLBACK_MODEL = "gpt-4o"
+FALLBACK_MODEL = "gpt-4o-mini"
 
 # 모델2 : 입력 가드레일 전용 분류 모델 - 판별 일관성을 위해 저온도로 별도 호출
 CLASSIFIER_MODEL = "gpt-4o-mini"

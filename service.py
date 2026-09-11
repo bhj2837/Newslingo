@@ -38,6 +38,24 @@ from .schemas import (
 )
 from .tools import news_search
 
+# ──────────────────────────────────────────────────────────────
+# 채팅 중 "다른 기사"/"그만 할래" 같은 제어 의도 감지 (규칙 기반, 문제 5/6/7)
+#
+# 예전엔 이런 문구도 그냥 채팅 Agent에게 넘겨서 Tool-calling으로 처리하려 했는데,
+#   - "다른 기사"류 → news_search 를 반복 호출하다 recursion limit 크래시
+#   - "그만할래"류 → update_preference(level 변경)로 잘못 해석돼 엉뚱한 HITL 발생
+# 두 경우 다 LLM 판단에 맡기면 오류가 잦아서, 이건 아예 Agent 에게 보내지 않고
+# 여기서 규칙 기반으로만 감지한다. 실제 전환은 UI 버튼(app_cli.py 의 'n'/'q')으로만
+# 하고, 여기서 감지되면 "버튼을 눌러주세요" 안내만 돌려준다.
+# ──────────────────────────────────────────────────────────────
+_NEXT_ARTICLE_PATTERNS = (
+    "다른 기사", "다른기사", "다음 기사", "다음기사", "다른 뉴스", "다른뉴스",
+)
+_END_STUDY_PATTERNS = (
+    "그만할래", "그만할게", "그만볼래", "끝낼래", "끝낼게", "그만 공부", "공부 그만",
+    "공부 끝", "학습 종료", "학습종료", "종료할래",
+)
+
 
 @dataclass
 class LearningSession:
@@ -52,6 +70,7 @@ class LearningSession:
     unread_candidates: list[ArticleCandidate] = field(default_factory=list)
     seen_article_urls: set[str] = field(default_factory=set)
     last_quiz: QuizSet | None = None
+    study_material: ArticleStudyMaterial | None = None  # 2-a: chat()에서 Context로 주입하려고 캐시
 
     def __post_init__(self) -> None:
         self._agent = build_agent()
@@ -132,19 +151,41 @@ class LearningSession:
             "text": raw.get("content") or article.summary,
         }
         self.chat_log = []
+        self.study_material = None  # 새 기사로 바뀌면 이전 학습자료는 더 이상 유효하지 않음
         self.unread_candidates = [
             a for a in self.unread_candidates if a.url != article.url
         ]
 
     def make_study_material(self) -> ArticleStudyMaterial:
         self._require_article()
-        return study_material_chain.invoke(
+        material = study_material_chain.invoke(
             {
                 "level": self.profile["level"],
                 "article_title": self.current_article["title"],
                 "article_text": self.current_article["text"],
             }
         )
+        self.study_material = material  # 2-a: chat()에서 Agent 에게 주입할 수 있게 캐시
+        return material
+
+    # ──────────────────────────────────────────────────────
+    # 6-B. 채팅 자유 텍스트의 제어 의도 감지 (문제 5/6/7, 규칙 기반)
+    # ──────────────────────────────────────────────────────
+    @staticmethod
+    def detect_control_intent(text: str) -> str | None:
+        """"다른 기사"/"그만할래" 같은 문구를 채팅 Agent 로 보내기 전에 걸러낸다.
+
+        Returns:
+            "next_article" / "end_study" / None (제어 의도 아님 → 평소처럼 chat() 호출)
+        이 메서드는 아무 것도 실행하지 않는다 — 호출부(UI/CLI)가 감지 결과를 보고
+        "버튼을 눌러주세요"라고 안내하거나, 직접 버튼 액션을 트리거해야 한다.
+        """
+        stripped = text.strip()
+        if any(p in stripped for p in _NEXT_ARTICLE_PATTERNS):
+            return "next_article"
+        if any(p in stripped for p in _END_STUDY_PATTERNS):
+            return "end_study"
+        return None
 
     # ──────────────────────────────────────────────────────
     # 7단계. 자유 채팅 학습 지원 (설계서 2.2, 테스트 TS-05/TS-06)
@@ -163,7 +204,7 @@ class LearningSession:
                 "configurable": {"thread_id": self.thread_id},
                 "recursion_limit": 2 * config.TOOL_CALL_LIMIT + 3,
             },
-            context=Context(user_id=self.user_id),
+            context=self._build_context(),
         )
         return self._unpack(result)
 
@@ -180,7 +221,7 @@ class LearningSession:
         result = self._agent.invoke(
             Command(resume={"decisions": [decision]}),
             config={"configurable": {"thread_id": self.thread_id}},
-            context=Context(user_id=self.user_id),
+            context=self._build_context(),
         )
         return self._unpack(result)
 
@@ -231,6 +272,39 @@ class LearningSession:
     def _require_article(self) -> None:
         if self.current_article is None:
             raise RuntimeError("먼저 select_article() 로 기사를 선택하세요.")
+
+    def _build_context(self) -> Context:
+        """agent.invoke(context=...) 에 넘길 Context 를 매 호출마다 새로 만든다.
+
+        2-a 수정: 현재 선택된 기사 원문 + (있으면) 학습자료 요약을 담아서
+        middleware.profile_injection 이 system prompt 에 주입할 수 있게 한다.
+        기사를 아직 안 골랐으면 article_* 는 빈 문자열로 남아 기존 동작과 동일.
+        """
+        if self.current_article is None:
+            return Context(user_id=self.user_id)
+        return Context(
+            user_id=self.user_id,
+            article_title=self.current_article["title"],
+            article_text=self.current_article["text"],
+            study_material_summary=self._material_summary(),
+        )
+
+    def _material_summary(self) -> str:
+        """study_material 캐시를 system prompt 에 넣기 좋은 텍스트 블록으로 정리."""
+        material = self.study_material
+        if material is None:
+            return ""
+
+        lines = [f"번역:\n{material.translated_text}", "", "전문 용어:"]
+        lines += [f"- {t.term} ({t.meaning}): {t.example}" for t in material.key_terms]
+        lines += ["", "기본 단어:"]
+        lines += [f"- {t.term} ({t.meaning}): {t.example}" for t in material.basic_vocab]
+        lines += ["", "문법 포인트:"]
+        lines += [
+            f"- {g.pattern}: {g.explanation}\n  예문: {g.example}"
+            for g in material.grammar_points
+        ]
+        return "\n".join(lines)
 
     def _unpack(self, result: dict) -> dict:
         interrupts = result.get("__interrupt__")
