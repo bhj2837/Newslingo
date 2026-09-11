@@ -8,5 +8,5 @@ python-dotenv>=1.0
 pydantic>=2.0
 requests>=2.30
 
-# UI (나중에 추가 예정) - 아직 미사용, 붙일 때 주석 해제
-# streamlit>=1.36
+# UI
+streamlit>=1.36
