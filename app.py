@@ -60,7 +60,7 @@ st.set_page_config(page_title="뉴스링고", page_icon="📰", layout="wide")
 # ──────────────────────────────────────────────────────────────
 STYLE = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&family=Source+Serif+4:wght@600&display=swap');
 
 :root{
   --bg:#fbfbfa; --surface:#ffffff; --ink:#191a1e; --ink-2:#5c5f68; --ink-3:#9698a0;
@@ -85,14 +85,36 @@ h1, h2, h3, .head { font-family:'Space Grotesk','Noto Sans KR',sans-serif !impor
   border:1px solid var(--line); padding:6px 14px; border-radius:10px; white-space:nowrap;
   display:flex; align-items:center; justify-content:center; text-align:center; }
 
-/* 카드 */
-.card{ background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:16px; }
-.card.selected{ border:1.5px solid var(--accent); box-shadow:0 4px 14px -6px oklch(0.55 0.14 258 / .35); }
 .tag{ display:inline-block; font-size:10px; font-weight:700; color:var(--ink-2); background:var(--bg);
   padding:3px 9px; border-radius:999px; margin-bottom:8px; }
 .tag.accent{ color:var(--accent); background:var(--accent-soft); }
-.card-title{ font-size:13.5px; font-weight:700; line-height:1.4; color:var(--ink); margin-bottom:6px; }
-.card-meta{ font-size:11px; color:var(--ink-3); }
+
+/* 추천 기사 카드 (신문 지면 스타일) */
+.news-card{
+  display:flex; flex-direction:column; gap:10px;
+  padding-top:10px; border-top:2px solid var(--ink);
+  transition: border-color .15s ease;
+}
+.news-card .kicker{
+  display:flex; align-items:center; justify-content:space-between;
+  font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3);
+}
+.news-card .kicker .idx{ font-variant-numeric:tabular-nums; color:var(--ink-3); }
+.news-card .headline{
+  font-family:'Source Serif 4', Georgia, 'Noto Serif KR', serif;
+  font-size:16.5px; font-weight:600; line-height:1.32; color:var(--ink);
+  text-wrap:balance; min-height:62px;
+}
+.news-card .byline{
+  display:flex; align-items:center; gap:6px;
+  font-size:11px; color:var(--ink-3); font-variant-numeric:tabular-nums;
+  padding-top:8px; border-top:1px solid var(--line);
+}
+.news-card .byline b{ color:var(--ink-2); font-weight:600; }
+.news-card .byline .sep{ opacity:.5; }
+.news-card.selected{ border-top-color:var(--accent); }
+.news-card.selected .kicker{ color:var(--accent); }
+.news-card.selected .headline{ color:var(--ink); }
 
 .label{ font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); }
 
@@ -139,6 +161,11 @@ div[class*="st-key-chat_box"]{
   background:var(--surface) !important; border:1px solid var(--line) !important; border-radius:16px !important;
   padding:14px 16px !important; margin-bottom:16px !important;
 }
+
+/* 라디오 버튼 선택 색상 (기본 빨강 → 테마 블루) */
+.stRadio input[type="radio"]{ accent-color: var(--accent) !important; }
+.stRadio label:has(input:checked) > div > div > div:first-child{ background-color: var(--accent) !important; }
+.stRadio label:has(input:checked) > div > div > div:first-child > div{ background-color: #fff !important; }
 
 /* 입력창 포커스 색상 (기본 빨강 → 테마 블루) */
 .stTextInput input:focus,
@@ -332,15 +359,16 @@ def render_topic_and_candidates() -> None:
         st.markdown('<div class="label" style="margin:14px 0 8px;">추천 기사</div>', unsafe_allow_html=True)
         cols = st.columns(5)
         selected_url = (session.current_article or {}).get("url")
-        for col, art in zip(cols, st.session_state.candidates):
+        for i, (col, art) in enumerate(zip(cols, st.session_state.candidates), start=1):
             with col:
                 is_selected = art.url == selected_url
+                category = (art.keywords[0] if art.keywords else art.source).title()
                 st.markdown(
                     f"""
-                    <div class="card{' selected' if is_selected else ''}">
-                      <span class="tag{' accent' if is_selected else ''}">{art.source}</span>
-                      <div class="card-title">{art.title}</div>
-                      <div class="card-meta">{art.published_date}</div>
+                    <div class="news-card{' selected' if is_selected else ''}">
+                      <div class="kicker"><span>{category}</span><span class="idx">{i:02d}</span></div>
+                      <div class="headline">{art.title}</div>
+                      <div class="byline"><b>{art.source}</b><span class="sep">·</span><span>{art.published_date}</span></div>
                     </div>
                     """,
                     unsafe_allow_html=True,
