@@ -281,6 +281,7 @@ class MockLearningSession:
         self._require_article()
         raw = self.current_article["_raw"]
         return ArticleStudyMaterial(
+            original_text=raw["text"],
             translated_text=raw["translation"],
             key_terms=[TermItem(term=t, meaning=m, example=e) for t, m, e in raw["key_terms"]],
             basic_vocab=[
